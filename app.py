@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, jsonify, render_template
+from flask import Flask, request, send_file, jsonify, render_template, make_response
 from datetime import datetime, timedelta
 import requests
 import io
@@ -58,7 +58,8 @@ def get_or_create_session(token, now):
 def track_pixel():
     token = request.args.get("id", "unknown")
     user_agent = request.headers.get("User-Agent", "Inconnu")
-    ip = request.remote_addr
+    # Récupérer l'IP réelle derrière le proxy Render
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
     if ip and "," in ip:
         ip = ip.split(",")[0].strip()
     city = get_city_from_ip(ip)
@@ -87,15 +88,16 @@ def track_pixel():
             sess["duration_sec"] = int((now - start_dt).total_seconds())
             break
     print(f"[TRACK] Token={token[:12]} | IP={ip} | City={city} | Session={session_id}")
-    return send_file(
+    
+    # CORRECTION : make_response + send_file sans headers
+    response = make_response(send_file(
         io.BytesIO(TRANSPARENT_PIXEL),
-        mimetype="image/png",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0, private",
-            "Pragma": "no-cache",
-            "Expires": "0"
-        }
-    )
+        mimetype="image/png"
+    ))
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0, private"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 @app.route("/click")
 def track_click():
